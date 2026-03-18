@@ -1,377 +1,510 @@
 package com.security.cameralockfacility.ui
 
-import android.content.Intent
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.paddingFromBaseline
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.ExperimentalMaterialApi
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Place
+import androidx.compose.material.icons.filled.QrCode
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.material.pullrefresh.PullRefreshIndicator
+import androidx.compose.material.pullrefresh.pullRefresh
+import androidx.compose.material.pullrefresh.rememberPullRefreshState
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.security.cameralockfacility.R
-import com.security.cameralockfacility.activity.CreateUpdateFacility
-import com.security.cameralockfacility.modal.Facility
+import androidx.navigation.NavHostController
+import com.security.cameralockfacility.modal.ApiResult
+import com.security.cameralockfacility.modal.FacilityData
+import com.security.cameralockfacility.ui.QRType
+import com.security.cameralockfacility.viewmodel.FacilityViewModel
+import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.debounce
+import java.time.Instant
+import java.time.LocalDateTime
+import java.time.ZoneId
+import java.time.ZonedDateTime
+import java.time.format.DateTimeFormatter
 
+private val FcBgDark = Color(0xFF0B101F)
+private val FcCardBg = Color(0xFF161C2C)
+private val FcAccentBlue = Color(0xFF2196F3)
+private val FcTextGray = Color(0xFF8A92A6)
+private val FcStatusGreen = Color(0xFF4CAF50)
+private val FcStatusRed = Color(0xFFEF5350)
+
+@OptIn(FlowPreview::class, ExperimentalMaterialApi::class)
 @Composable
-fun FacilityContent() {
-    // For now, we use a dummy object to see the design
-    val dummyFacility = Facility("1", "Automobile warehouse", "Active", 20)
+fun FacilityContent(
+    navController: NavHostController,
+    viewModel: FacilityViewModel,
+    showSnackbar: (String) -> Unit,
+    onUnauthorized: () -> Unit
+) {
     var searchQuery by remember { mutableStateOf("") }
-    val context = LocalContext.current
-    var showDeleteDialog by remember { mutableStateOf(false) }
-    Column(
+    val listState by viewModel.listState.collectAsState()
+    val deleteState by viewModel.deleteState.collectAsState()
+    val lazyListState = rememberLazyListState()
+    val isLoading = listState is ApiResult.Loading
+    val isRefreshing = isLoading && viewModel.items.isNotEmpty()
+    var facilityToDelete by remember { mutableStateOf<FacilityData?>(null) }
+    var facilityForQR by remember { mutableStateOf<Pair<FacilityData, QRType>?>(null) }
+    val pullRefreshState = rememberPullRefreshState(
+        refreshing = isRefreshing,
+        onRefresh = { viewModel.refreshFacilities() }
+    )
+
+    // Search debounce
+    val searchFlow = remember { MutableStateFlow("") }
+    LaunchedEffect(Unit) {
+        searchFlow.debounce(400).collect { q ->
+            viewModel.loadFacilities(1, q, reset = true)
+        }
+    }
+    LaunchedEffect(searchQuery) { searchFlow.value = searchQuery }
+
+    LaunchedEffect(Unit) {
+        if (viewModel.items.isEmpty()) viewModel.loadFacilities(reset = true)
+    }
+
+    LaunchedEffect(listState) {
+        if (listState is ApiResult.Error && (listState as ApiResult.Error).code == 401) onUnauthorized()
+    }
+
+    LaunchedEffect(deleteState) {
+        when (val state = deleteState) {
+            is ApiResult.Success -> {
+                showSnackbar(state.data)
+                viewModel.resetDelete()
+                viewModel.refreshFacilities()
+            }
+            is ApiResult.Error -> {
+                showSnackbar(state.message)
+                viewModel.resetDelete()
+                if (state.code == 401) onUnauthorized()
+            }
+            else -> {}
+        }
+    }
+
+    // Infinite scroll trigger
+    val shouldLoadMore by remember {
+        derivedStateOf {
+            val lastVisible = lazyListState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+            lastVisible >= viewModel.items.size - 3 && !viewModel.isLastPage && !isLoading
+        }
+    }
+    LaunchedEffect(shouldLoadMore) {
+        if (shouldLoadMore) viewModel.loadNextPage()
+    }
+
+    Box(
         modifier = Modifier
             .fillMaxSize()
-            .padding(16.dp)
+            .background(FcBgDark)
+            .pullRefresh(pullRefreshState)
     ) {
-// 1. Action Header Component
-        FacilityActionHeader(
-            searchQuery = searchQuery,
-            onSearchChange = { searchQuery = it },
-            onCreateClick = {
-                context.startActivity(
-                    Intent(
-                        context,
-                        CreateUpdateFacility::class.java
-                    )
-                )
-            }
-        )
-        FacilityCard(facility = dummyFacility, onUpdate = {
-            context.startActivity(
-                Intent(
-                    context,
-                    CreateUpdateFacility::class.java
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(16.dp)
+        ) {
+        // Action Header
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = { searchQuery = it },
+                modifier = Modifier.weight(1f),
+                placeholder = { Text("Search Facility...", color = FcTextGray) },
+                leadingIcon = { Icon(Icons.Default.Search, null, tint = FcTextGray) },
+                singleLine = true,
+                shape = RoundedCornerShape(12.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedTextColor = Color.White,
+                    unfocusedTextColor = Color.White,
+                    focusedContainerColor = FcCardBg,
+                    unfocusedContainerColor = FcCardBg,
+                    focusedBorderColor = FcAccentBlue,
+                    unfocusedBorderColor = Color.Transparent
                 )
             )
-        }, onDelete = {
-            // 2. LOGIC: Just flip the switch here
-            showDeleteDialog = true
-        })
-    }
-    if (showDeleteDialog) {
-        OpenDeleteConfirmationDialog(
-            onDismissRequest = { showDeleteDialog = false }, // Hide when canceled
-            onConfirmDelete = {
-                // Perform delete logic here
-                showDeleteDialog = false
+            Button(
+                onClick = { navController.navigate("facility/create") },
+                modifier = Modifier.height(46.dp),
+                shape = RoundedCornerShape(12.dp),
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = FcAccentBlue)
+            ) {
+                Icon(Icons.Default.Add, null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(4.dp))
+                Text("Create", fontSize = 13.sp)
             }
+        }
+
+            when {
+                isLoading && viewModel.items.isEmpty() -> {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(color = FcAccentBlue)
+                    }
+                }
+                listState is ApiResult.Error && viewModel.items.isEmpty() -> {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(24.dp)) {
+                            val err = listState as ApiResult.Error
+                            Text(
+                                if (err.code == 404) "There are no facilities available." else err.message.ifBlank { "Couldn’t load facilities. Pull to refresh or try again." },
+                                color = FcStatusRed,
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                            )
+                            Spacer(Modifier.height(12.dp))
+                            Button(
+                                onClick = { viewModel.refreshFacilities() },
+                                colors = ButtonDefaults.buttonColors(containerColor = FcAccentBlue)
+                            ) { Text("Retry") }
+                        }
+                    }
+                }
+                viewModel.items.isEmpty() && !isLoading -> {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text("There are no facilities available", color = FcTextGray, fontSize = 16.sp)
+                            Spacer(Modifier.height(12.dp))
+                            Button(
+                                onClick = { navController.navigate("facility/create") },
+                                colors = ButtonDefaults.buttonColors(containerColor = FcAccentBlue)
+                            ) { Text("Create First Facility") }
+                        }
+                    }
+                }
+                else -> {
+                    LazyColumn(state = lazyListState, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        items(viewModel.items) { facility ->
+                            FacilityCardComposable(
+                                facility = facility,
+                                onUpdate = { navController.navigate("facility/edit/${facility.id}") },
+                                onDelete = { facilityToDelete = facility },
+                                onQRCode = { qrType -> facilityForQR = facility to qrType },
+                                onView = { if (facility.id.isNotBlank()) navController.navigate("facility/detail/${facility.id}") }
+                            )
+                        }
+                        if (isLoading) {
+                            item {
+                                Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
+                                    CircularProgressIndicator(color = FcAccentBlue, modifier = Modifier.size(24.dp))
+                                }
+                            }
+                        }
+                        if (viewModel.isLastPage && viewModel.items.isNotEmpty()) {
+                            item {
+                                Box(Modifier.fillMaxWidth().padding(8.dp), contentAlignment = Alignment.Center) {
+                                    Text("${viewModel.items.size} facilities total", color = FcTextGray, fontSize = 12.sp)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        PullRefreshIndicator(
+            refreshing = isRefreshing,
+            state = pullRefreshState,
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .padding(top = 8.dp),
+            contentColor = FcAccentBlue,
+            backgroundColor = FcCardBg
+        )
+    }
+
+    // Delete confirmation dialog
+    facilityToDelete?.let { facility ->
+        OpenDeleteConfirmationDialog(
+            facilityName = facility.name,
+            isDeleting = deleteState is ApiResult.Loading,
+            onDismissRequest = { if (deleteState !is ApiResult.Loading) facilityToDelete = null },
+            onConfirmDelete = {
+                viewModel.deleteFacility(facility.id)
+                facilityToDelete = null
+            }
+        )
+    }
+
+    // QR code dialog
+    facilityForQR?.let { (facility, qrType) ->
+        QRCodeDialog(
+            facility = facility,
+            viewModel = viewModel,
+            focus = qrType,
+            onDismiss = { facilityForQR = null },
+            showSnackbar = showSnackbar
         )
     }
 }
+
+@Composable
+fun FacilityCardComposable(
+    facility: FacilityData,
+    onUpdate: () -> Unit,
+    onDelete: () -> Unit,
+    onQRCode: (QRType) -> Unit,
+    onView: () -> Unit = {}
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onView() },
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = FcCardBg)
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Top
+            ) {
+                Text(
+                    text = facility.name,
+                    color = Color.White,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.weight(1f).padding(end = 8.dp)
+                )
+                FacilityStatusBadge(facility.status)
+            }
+
+            if (!facility.description.isNullOrBlank()) {
+                Text(
+                    text = facility.description,
+                    color = FcTextGray,
+                    fontSize = 13.sp,
+                    modifier = Modifier.padding(top = 6.dp),
+                    maxLines = 2
+                )
+            }
+
+            facility.location?.let { loc ->
+                val locationStr = listOf(loc.city, loc.state, loc.country).filter { it.isNotBlank() }.joinToString(", ")
+                if (locationStr.isNotBlank()) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(top = 6.dp)
+                    ) {
+                        Icon(Icons.Default.Place, null, tint = FcTextGray, modifier = Modifier.size(14.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text(locationStr, color = FcTextGray, fontSize = 12.sp)
+                    }
+                }
+            }
+
+            if (facility.notificationEmails.isNotEmpty()) {
+                Text(
+                    "${facility.notificationEmails.size} notification email(s)",
+                    color = FcTextGray,
+                    fontSize = 12.sp,
+                    modifier = Modifier.padding(top = 4.dp)
+                )
+            }
+
+            if (!facility.createdAt.isNullOrBlank()) {
+                Text(
+                    "Created: ${formatDateFriendly(facility.createdAt)}",
+                    color = FcTextGray,
+                    fontSize = 11.sp,
+                    modifier = Modifier.padding(top = 8.dp)
+                )
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Top
+            ) {
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    QRAction(iconLabel = "Entry", onClick = { onQRCode(QRType.ENTRY) })
+                    QRAction(iconLabel = "Exit", onClick = { onQRCode(QRType.EXIT) })
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedButton(
+                        onClick = onDelete,
+                        border = BorderStroke(1.dp, FcStatusRed),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = FcStatusRed,
+                            containerColor = Color.Transparent
+                        ),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Icon(Icons.Default.Delete, contentDescription = null, tint = FcStatusRed, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("Delete", fontSize = 13.sp)
+                    }
+                    Button(
+                        onClick = onUpdate,
+                        colors = ButtonDefaults.buttonColors(containerColor = FcAccentBlue),
+                        shape = RoundedCornerShape(8.dp),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+                    ) {
+                        Icon(Icons.Default.Edit, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Update", color = Color.White, fontSize = 13.sp)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun QRAction(iconLabel: String, onClick: () -> Unit) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        IconButton(onClick = onClick, modifier = Modifier.size(40.dp)) {
+            Icon(
+                Icons.Default.QrCode,
+                contentDescription = "$iconLabel QR",
+                tint = FcAccentBlue,
+                modifier = Modifier.size(36.dp)
+            )
+        }
+        Text(iconLabel, color = FcTextGray, fontSize = 12.sp)
+    }
+}
+
+@Composable
+private fun FacilityStatusBadge(status: String) {
+    val isActive = status.lowercase() == "active"
+    Box(
+        modifier = Modifier
+            .background(
+                color = if (isActive) FcStatusGreen.copy(alpha = 0.15f) else FcStatusRed.copy(alpha = 0.15f),
+                shape = RoundedCornerShape(6.dp)
+            )
+            .padding(horizontal = 10.dp, vertical = 4.dp)
+    ) {
+        Text(
+            text = status.uppercase(),
+            color = if (isActive) FcStatusGreen else FcStatusRed,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Bold
+        )
+    }
+}
+
+private val facilityCardFormatter: DateTimeFormatter = DateTimeFormatter.ofPattern("dd MMM yyyy")
+private fun formatDateFriendly(raw: String): String = runCatching {
+    facilityCardFormatter.format(ZonedDateTime.ofInstant(Instant.parse(raw), ZoneId.systemDefault()))
+}.getOrElse {
+    runCatching {
+        val cleaned = raw.removeSuffix("Z")
+        facilityCardFormatter.format(LocalDateTime.parse(cleaned).atZone(ZoneId.systemDefault()))
+    }.getOrElse { raw.take(10) }
+}
+
 @Composable
 fun OpenDeleteConfirmationDialog(
+    facilityName: String = "",
+    isDeleting: Boolean = false,
     onDismissRequest: () -> Unit,
     onConfirmDelete: () -> Unit
 ) {
     AlertDialog(
         onDismissRequest = onDismissRequest,
-        containerColor = Color(0xFF161C2C), // Dark Navy matching your card theme
+        containerColor = Color(0xFF161C2C),
         title = {
-            Text(
-                text = "Delete Facility",
-                color = Color.White,
-                fontSize = 20.sp,
-                fontWeight = FontWeight.Bold
-            )
+            Text("Delete Facility", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
         },
         text = {
             Text(
-                text = "Are you sure you want to delete this facility?",
+                "Are you sure you want to permanently delete \"$facilityName\"? This cannot be undone.",
                 color = Color.Gray,
-                fontSize = 16.sp
+                fontSize = 15.sp
             )
         },
+        // Centered action row
         confirmButton = {
-            Button(
-                onClick = onConfirmDelete,
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF5350)), // Danger Red
-                shape = RoundedCornerShape(8.dp)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally)
             ) {
-                Text("Delete", color = Color.White)
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismissRequest) {
-                Text("Cancel", color = Color.Gray)
+                OutlinedButton(
+                    onClick = onDismissRequest,
+                    enabled = !isDeleting,
+                    border = BorderStroke(1.dp, Color.Gray),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = Color.Gray,
+                        containerColor = Color.Transparent,
+                        disabledContentColor = Color.Gray.copy(alpha = 0.5f)
+                    ),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Text("Cancel")
+                }
+                Button(
+                    onClick = onConfirmDelete,
+                    colors = ButtonDefaults.buttonColors(containerColor = FcStatusRed),
+                    shape = RoundedCornerShape(8.dp),
+                    enabled = !isDeleting
+                ) {
+                    if (isDeleting) {
+                        CircularProgressIndicator(color = Color.White, modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                    } else {
+                        Text("Delete", color = Color.White)
+                    }
+                }
             }
         },
         shape = RoundedCornerShape(16.dp)
     )
 }
+
+@Preview(showBackground = true, backgroundColor = 0xFF0B101F)
 @Composable
-fun FacilityActionHeader(
-    searchQuery: String,
-    onSearchChange: (String) -> Unit,
-    onCreateClick: () -> Unit
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(bottom = 16.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        // Search Bar
-        OutlinedTextField(
-            value = searchQuery,
-            onValueChange = onSearchChange,
-            modifier = Modifier.weight(1f),
-            placeholder = { Text("Search Facility...", color = Color.Gray) },
-            leadingIcon = {
-                Icon(
-                    imageVector = Icons.Default.Search,
-                    contentDescription = "Search",
-                    tint = Color.Gray
-                )
-            },
-            singleLine = true,
-            shape = RoundedCornerShape(12.dp),
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedTextColor = Color.White,
-                unfocusedTextColor = Color.White,
-                focusedContainerColor = Color(0xFF161C2C),
-                unfocusedContainerColor = Color(0xFF161C2C),
-                focusedBorderColor = Color(0xFF2196F3),
-                unfocusedBorderColor = Color.Transparent
-            )
-        )
-
-        // Create Button
-        Button(
-            onClick = onCreateClick,
-            modifier = Modifier.height(50.dp),
-            shape = RoundedCornerShape(12.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2196F3))
-        ) {
-            Icon(imageVector = Icons.Default.Add, contentDescription = null)
-            Spacer(Modifier.width(4.dp))
-            Text("Create", fontSize = 14.sp)
-        }
-    }
-}
-
-@Composable
-fun FacilityCard(
-    facility: Facility,
-    onUpdate: () -> Unit,
-    onDelete: () -> Unit
-) {
-    var selectedQrLabel by remember { mutableStateOf<String?>(null) }
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 8.dp),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = Color(0xFF161C2C)) // Slightly lighter than bg
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            // Header Info
-            Text(
-                text = facility.name,
-                color = Color.White,
-                fontSize = 20.sp,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(top = 10.dp)
-            )
-
-            Row(modifier = Modifier.padding(top = 10.dp)) {
-                Text(text = "Status: ", color = Color.Gray, fontSize = 14.sp)
-                Text(
-                    text = facility.status,
-                    color = Color(0xFF4CAF50),
-                    fontSize = 14.sp
-                ) // Green for Active
-            }
-
-            Row(modifier = Modifier.padding(top = 8.dp)) {
-                Text(text = "Device Active Count: ", color = Color.Gray, fontSize = 14.sp)
-                Text(text = "${facility.deviceCount}", color = Color.White, fontSize = 14.sp)
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // QR Sections
-            // QR and Download Sections
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(100.dp), // Fixed height helps see the centering
-                horizontalArrangement = Arrangement.SpaceEvenly,
-                verticalAlignment = Alignment.CenterVertically // THIS centers all columns in the row
-            ) {
-                QRItem(
-                    label = "Entry QR",
-                    iconRes = R.drawable.icon_dummy_qr,
-                    iconSize = 60.dp,
-                    onClick = { selectedQrLabel = "Entry QR" }
-                )
-
-                QRItem(
-                    label = "Exit QR",
-                    iconRes = R.drawable.icon_dummy_qr,
-                    iconSize = 60.dp,
-                    onClick = { selectedQrLabel = "Exit QR" }
-                )
-
-                 QRItem(
-                    label = "Download",
-                    iconRes = R.drawable.icon_download,
-                    iconSize = 25.dp, // Smaller icon, but now centered vertically
-                    onClick = { /* Do nothing for now */ }
-                )
-            }
-            if (selectedQrLabel != null) {
-                ShowQrPreviewDialog(
-                    label = selectedQrLabel!!,
-                    onDismiss = { selectedQrLabel = null }
-                )
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Action Buttons
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                TextButton(
-                    onClick = {
-                        // Put logic here (e.g., calling the delete function)
-                        onDelete()
-                    }
-                ) {
-                    // Put UI components here
-                    Text("Delete", color = Color(0xFFEF5350))
-                }
-                Button(
-                    onClick = onUpdate,
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2196F3)),
-                    shape = RoundedCornerShape(8.dp)
-                ) {
-                    Text("Update", color = Color.White)
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun QRItem(
-    label: String,
-    iconRes: Int,
-    iconSize: Dp = 40.dp,
-    onClick: () -> Unit = {}
-) {
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally, // Centers icon and text
-        verticalArrangement = Arrangement.Center,           // Centers content vertically
-        modifier = Modifier
-            .clickable { onClick() }
-            .padding(4.dp)
-    ) {
-        Icon(
-            painter = painterResource(id = iconRes),
-            contentDescription = label,
-            modifier = Modifier.size(iconSize),
-            tint = Color.White
-        )
-        Text(
-            text = label,
-            color = Color.Gray,
-            fontSize = 12.sp,
-            modifier = Modifier.padding(top = 4.dp)
-        )
-    }
-}
-
-@Composable
-fun ShowQrPreviewDialog(label: String, onDismiss: () -> Unit) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor = Color(0xFF161C2C),
-        confirmButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Close", color = Color(0xFF2196F3))
-            }
-        },
-        title = {
-            Text(text = label, color = Color.White, fontSize = 18.sp)
-        },
-        text = {
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                // Display the actual dummy QR image here
-                Icon(
-                    painter = painterResource(id = R.drawable.dummy_qr),
-                    contentDescription = "QR Preview",
-                    modifier = Modifier.size(200.dp),
-                    tint = Color.White
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                Text("Scan this code at the facility $label", color = Color.Gray, fontSize = 14.sp)
-            }
-        }
+fun PreviewFacilityCard() {
+    val mockFacility = FacilityData(
+        id = "1",
+        name = "Global Innovation Center",
+        description = "Main research facility for security protocols and hardware testing.",
+        status = "Active",
+        location = null, // You can fill this if your modal supports it
+        notificationEmails = listOf("admin@example.com"),
+        createdAt = "2023-10-27T10:00:00Z"
     )
-}
 
-@Preview(showBackground = true, device = "spec:width=411dp,height=1000dp")
-@Composable
-fun FacilityCardPreview() {
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color(0xFF0B101F))
-    ) {
-        FacilityContent()
-    }
-}
-@Preview
-@Composable
-fun DeleteDialogPreview() {
-    MaterialTheme {
-        // We use a Box with a dark background to simulate the app state
-        Box(modifier = Modifier.fillMaxSize().background(Color(0xFF0B101F))) {
-            OpenDeleteConfirmationDialog(
-                onDismissRequest = {},
-                onConfirmDelete = {}
-            )
-        }
+    Box(modifier = Modifier.padding(16.dp)) {
+        FacilityCardComposable(
+            facility = mockFacility,
+            onUpdate = {},
+            onDelete = {},
+            onQRCode = {},
+            onView = {}
+        )
     }
 }

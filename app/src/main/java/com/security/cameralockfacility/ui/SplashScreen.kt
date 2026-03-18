@@ -27,14 +27,14 @@ import androidx.compose.ui.unit.sp
 
 @Composable
 fun AdminSplashScreen() {
-    // Define the colors based on your branding
-    val brandBlue = Color(0xFF1E61EB) // Example Bright Blue
-    val darkNavy = Color(0xFF0B101F)  // From your XML background
+    // Darkened brand tones
+    val brandBlue = Color(0xFF0F2D68) // dimmer blue
+    val darkNavy = Color(0xFF0B101F)
 
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(brandBlue), // Inverted: Blue background for Admin
+            .background(brandBlue),
         contentAlignment = Alignment.Center
     ) {
         Column(

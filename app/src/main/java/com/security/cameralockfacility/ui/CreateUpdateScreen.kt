@@ -1,14 +1,8 @@
 package com.security.cameralockfacility.ui
 
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.clickable
+import androidx.compose.ui.draw.rotate
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -17,53 +11,102 @@ import androidx.compose.material.icons.filled.AddCircle
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.CenterAlignedTopAppBar
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateListOf
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.navigation.NavHostController
+import com.security.cameralockfacility.modal.ApiResult
+import com.security.cameralockfacility.modal.FacilityData
+import com.security.cameralockfacility.viewmodel.FacilityViewModel
+import kotlinx.coroutines.launch
+
+private val CuBgDark = Color(0xFF0B101F)
+private val CuAccentBlue = Color(0xFF2196F3)
+private val CuTextGray = Color(0xFF8A92A6)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun CreateUpdateScreen(onBackClick: () -> Unit) {
-    // State for simple fields
-    var facilityName by remember { mutableStateOf("") }
-    var description by remember { mutableStateOf("") }
-    var location by remember { mutableStateOf("") }
-    var timeZone by remember { mutableStateOf("Asia/Kolkata") }
-    var status by remember { mutableStateOf("Active") }
+fun CreateUpdateScreen(
+    facilityId: String?,
+    navController: NavHostController,
+    viewModel: FacilityViewModel
+) {
+    val isEditMode = facilityId != null
+    val detailState by viewModel.detailState.collectAsState()
+    val saveState by viewModel.saveState.collectAsState()
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
+    val isSaving = saveState is ApiResult.Loading
 
-    // State for dynamic email list
-    val emailList = remember { mutableStateListOf("") }
+    // Form fields
+    var name by remember { mutableStateOf("") }
+    var description by remember { mutableStateOf("") }
+    var address by remember { mutableStateOf("") }
+    var city by remember { mutableStateOf("") }
+    var state by remember { mutableStateOf("") }
+    var country by remember { mutableStateOf("") }
+    val emails = remember { mutableStateListOf("") }
+    var timezone by remember { mutableStateOf("UTC") }
+    var status by remember { mutableStateOf("active") }
+    var formLoaded by remember { mutableStateOf(!isEditMode) }
+
+    // Load detail for edit mode
+    LaunchedEffect(facilityId) {
+        if (isEditMode) viewModel.loadDetail(facilityId!!)
+    }
+
+    // Pre-fill form from detail
+    LaunchedEffect(detailState) {
+        if (detailState is ApiResult.Success && isEditMode && !formLoaded) {
+            val f = (detailState as ApiResult.Success<FacilityData>).data
+            name = f.name
+            description = f.description ?: ""
+            address = f.location?.address ?: ""
+            city = f.location?.city ?: ""
+            state = f.location?.state ?: ""
+            country = f.location?.country ?: ""
+            if (f.notificationEmails.isNotEmpty()) {
+                emails.clear()
+                emails.addAll(f.notificationEmails)
+            }
+            timezone = f.timezone ?: "UTC"
+            status = f.status
+            formLoaded = true
+        }
+        if (detailState is ApiResult.Error && isEditMode) {
+            scope.launch { snackbarHostState.showSnackbar((detailState as ApiResult.Error).message) }
+        }
+    }
+
+    // Handle save result
+    LaunchedEffect(saveState) {
+        when (val s = saveState) {
+            is ApiResult.Success -> {
+                scope.launch { snackbarHostState.showSnackbar(s.data) }
+                viewModel.resetSave()
+                viewModel.refreshFacilities()
+                navController.popBackStack()
+            }
+            is ApiResult.Error -> {
+                scope.launch { snackbarHostState.showSnackbar(s.message) }
+                viewModel.resetSave()
+            }
+            else -> {}
+        }
+    }
 
     Scaffold(
+        containerColor = CuBgDark,
         topBar = {
             CenterAlignedTopAppBar(
                 title = {
                     Text(
-                        "CREATE FACILITY",
+                        if (isEditMode) "EDIT FACILITY" else "CREATE FACILITY",
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Bold,
                         letterSpacing = 2.sp,
@@ -71,90 +114,115 @@ fun CreateUpdateScreen(onBackClick: () -> Unit) {
                     )
                 },
                 navigationIcon = {
-                    IconButton(onClick = onBackClick) {
-                        Icon(
-                            imageVector = Icons.Default.ArrowBack,
-                            contentDescription = "Back",
-                            tint = Color.White
-                        )
+                    IconButton(onClick = {
+                        viewModel.resetDetail()
+                        navController.popBackStack()
+                    }) {
+                        Icon(Icons.Default.ArrowBack, null, tint = Color.White)
                     }
                 },
-                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
-                    containerColor = Color(0xFF0B101F)
-                )
+                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = CuBgDark)
             )
         },
-        containerColor = Color(0xFF0B101F) // Set background for the entire screen
+        snackbarHost = {
+            SnackbarHost(snackbarHostState) { data ->
+                Snackbar(snackbarData = data, containerColor = Color(0xFF2E7D32), contentColor = Color.White)
+            }
+        }
     ) { innerPadding ->
+        // Show loading while fetching detail for edit
+        if (isEditMode && detailState is ApiResult.Loading && !formLoaded) {
+            Box(Modifier.fillMaxSize().padding(innerPadding), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator(color = CuAccentBlue)
+            }
+            return@Scaffold
+        }
+
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(innerPadding) // Important: use Scaffold padding
+                .padding(innerPadding)
                 .verticalScroll(rememberScrollState())
                 .padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Note: I moved the "Create Facility" title to the Toolbar for a cleaner look
+            CustomInputField(label = "Facility Name *", value = name, onValueChange = { name = it })
+            CustomInputField(label = "Description", value = description, onValueChange = { description = it }, singleLine = false)
 
-            // 1. Facility Name
-            CustomInputField(
-                label = "Facility Name",
-                value = facilityName,
-                onValueChange = { facilityName = it })
-
-            // 2. Description
-            CustomInputField(
-                label = "Description",
-                value = description,
-                onValueChange = { description = it },
-                singleLine = false
-            )
-
-            // 3. Location
-            CustomInputField(label = "Location", value = location, onValueChange = { location = it })
-
-            // 4. Dynamic Notification Emails
-            EmailSection(
-                emailList = emailList,
-                onAddEmail = { emailList.add("") },
-                onRemoveEmail = { index -> if (emailList.size > 1) emailList.removeAt(index) },
-                onEmailChange = { index, value -> emailList[index] = value }
-            )
-
-            // 5. TimeZone
-            CustomDropdown(
-                label = "TimeZone",
-                options = listOf("Asia/Kolkata"),
-                selectedOption = timeZone
-            ) {
-                timeZone = it
+            // Location Section
+            Text("Location", color = CuTextGray, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+            CustomInputField(label = "Address", value = address, onValueChange = { address = it })
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Column(modifier = Modifier.weight(1f)) {
+                    CustomInputField(label = "City", value = city, onValueChange = { city = it })
+                }
+                Column(modifier = Modifier.weight(1f)) {
+                    CustomInputField(label = "State", value = state, onValueChange = { state = it })
+                }
             }
+            CustomInputField(label = "Country", value = country, onValueChange = { country = it })
 
-            // 6. Status
+            // Notification Emails
+            EmailSection(
+                emailList = emails,
+                onAddEmail = { emails.add("") },
+                onRemoveEmail = { index -> if (emails.size > 1) emails.removeAt(index) },
+                onEmailChange = { index, value -> emails[index] = value }
+            )
+
+            // Timezone
+            CustomDropdown(
+                label = "Timezone",
+                options = listOf("Asia/Kolkata", "UTC",),
+                selectedOption = timezone,
+                onOptionSelected = { timezone = it }
+            )
+
+            // Status
             CustomDropdown(
                 label = "Status",
-                options = listOf("Active", "Deactive"),
-                selectedOption = status
-            ) {
-                status = it
-            }
+                options = listOf("active", "inactive"),
+                selectedOption = status,
+                onOptionSelected = { status = it }
+            )
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(Modifier.height(8.dp))
 
-            // Save Button
             Button(
-                onClick = { /* Handle API Save */ },
+                onClick = {
+                    if (name.isBlank()) {
+                        scope.launch { snackbarHostState.showSnackbar("Facility name is required") }
+                        return@Button
+                    }
+                    val emailList = emails.filter { it.isNotBlank() }
+                    if (isEditMode) {
+                        viewModel.updateFacility(facilityId!!, name, description, address, city, state, country, emailList, timezone, status)
+                    } else {
+                        viewModel.createFacility(name, description, address, city, state, country, emailList, timezone, status)
+                    }
+                },
                 modifier = Modifier
-                    .fillMaxWidth()
+                    .fillMaxWidth(0.50f)
+                    .align(Alignment.CenterHorizontally)
                     .height(56.dp),
                 shape = RoundedCornerShape(12.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2196F3))
+                colors = ButtonDefaults.buttonColors(containerColor = CuAccentBlue),
+                enabled = !isSaving
             ) {
-                Text("Save Facility", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                if (isSaving) {
+                    CircularProgressIndicator(color = Color.White, modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
+                } else {
+                    Text(
+                        if (isEditMode) "Update Facility" else "Create Facility",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
             }
         }
     }
 }
+
 @Composable
 fun EmailSection(
     emailList: List<String>,
@@ -168,30 +236,30 @@ fun EmailSection(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Text("Notification Emails", color = Color.Gray, fontSize = 14.sp)
+            Text("Notification Emails", color = CuTextGray, fontSize = 14.sp)
             IconButton(onClick = onAddEmail) {
-                Icon(Icons.Default.AddCircle, contentDescription = "Add", tint = Color(0xFF2196F3))
+                Icon(Icons.Default.AddCircle, null, tint = CuAccentBlue)
             }
         }
-
         emailList.forEachIndexed { index, email ->
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(
                     value = email,
                     onValueChange = { onEmailChange(index, it) },
                     modifier = Modifier.weight(1f),
+                    placeholder = { Text("email@example.com", color = Color.DarkGray) },
+                    singleLine = true,
+                    shape = RoundedCornerShape(8.dp),
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedTextColor = Color.White,
-                        unfocusedTextColor = Color.White
-                    ),
-                    placeholder = { Text("email@example.com", color = Color.DarkGray) }
+                        unfocusedTextColor = Color.White,
+                        focusedBorderColor = CuAccentBlue,
+                        unfocusedBorderColor = Color(0xFF2A3245)
+                    )
                 )
                 if (emailList.size > 1) {
                     IconButton(onClick = { onRemoveEmail(index) }) {
-                        Icon(Icons.Default.Delete, contentDescription = "Remove", tint = Color.Red)
+                        Icon(Icons.Default.Delete, null, tint = Color(0xFFEF5350))
                     }
                 }
             }
@@ -206,16 +274,23 @@ fun CustomInputField(
     onValueChange: (String) -> Unit,
     singleLine: Boolean = true
 ) {
-    Column {
-        Text(label, color = Color.Gray, fontSize = 14.sp)
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(label, color = CuTextGray, fontSize = 13.sp)
         OutlinedTextField(
             value = value,
             onValueChange = onValueChange,
             modifier = Modifier.fillMaxWidth(),
             singleLine = singleLine,
+            minLines = if (singleLine) 1 else 3,
+            shape = RoundedCornerShape(10.dp),
             colors = OutlinedTextFieldDefaults.colors(
                 focusedTextColor = Color.White,
-                unfocusedTextColor = Color.White
+                unfocusedTextColor = Color.White,
+                focusedContainerColor = Color(0xFF0D1426),
+                unfocusedContainerColor = Color(0xFF0D1426),
+                focusedBorderColor = CuAccentBlue,
+                unfocusedBorderColor = Color(0xFF2A3245),
+                cursorColor = CuAccentBlue
             )
         )
     }
@@ -229,44 +304,48 @@ fun CustomDropdown(
     onOptionSelected: (String) -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
-    Column {
-        Text(label, color = Color.Gray, fontSize = 14.sp)
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(label, color = CuTextGray, fontSize = 13.sp)
         Box {
             OutlinedTextField(
                 value = selectedOption,
                 onValueChange = {},
                 readOnly = true,
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { expanded = true },
+                shape = RoundedCornerShape(10.dp),
                 trailingIcon = {
                     IconButton(onClick = { expanded = !expanded }) {
                         Icon(
                             Icons.Default.ArrowDropDown,
-                            contentDescription = null,
-                            tint = Color.White
+                            null,
+                            tint = Color.White,
+                            modifier = Modifier.rotate(if (expanded) 180f else 0f)
                         )
                     }
                 },
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedTextColor = Color.White,
-                    unfocusedTextColor = Color.White
+                    unfocusedTextColor = Color.White,
+                    focusedContainerColor = Color(0xFF0D1426),
+                    unfocusedContainerColor = Color(0xFF0D1426),
+                    focusedBorderColor = CuAccentBlue,
+                    unfocusedBorderColor = Color(0xFF2A3245)
                 )
             )
-            DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            DropdownMenu(
+                expanded = expanded,
+                onDismissRequest = { expanded = false },
+                containerColor = Color(0xFF161C2C)
+            ) {
                 options.forEach { option ->
-                    DropdownMenuItem(text = { Text(option) }, onClick = {
-                        onOptionSelected(option)
-                        expanded = false
-                    })
+                    DropdownMenuItem(
+                        text = { Text(option, color = Color.White) },
+                        onClick = { onOptionSelected(option); expanded = false }
+                    )
                 }
             }
         }
-    }
-}
-
-@Preview()
-@Composable
-fun CreateUpdatePreview() {
-    MaterialTheme {
-        CreateUpdateScreen(onBackClick = {})
     }
 }

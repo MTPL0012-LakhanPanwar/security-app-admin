@@ -4,160 +4,172 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AccountCircle
+import androidx.compose.material.icons.filled.Business
+import androidx.compose.material.icons.filled.ExitToApp
+import androidx.compose.material.icons.filled.Logout
+import androidx.compose.material.icons.filled.People
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Snackbar
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
-import com.security.cameralockfacility.R
-import java.time.format.TextStyle
+import com.security.cameralockfacility.viewmodel.AdminViewModel
+import com.security.cameralockfacility.viewmodel.DeviceViewModel
+import com.security.cameralockfacility.viewmodel.FacilityViewModel
+import kotlinx.coroutines.launch
+
+private val DsBgDark = Color(0xFF0B101F)
+private val DsNavBg = Color(0xFF111727)
+private val DsAccentBlue = Color(0xFF2196F3)
+private val DsTextGray = Color(0xFF8A92A6)
+
+sealed class DashboardTab(val route: String, val icon: ImageVector, val title: String) {
+    object Facilities : DashboardTab("tab_facilities", Icons.Default.Business, "Facilities")
+    object Devices : DashboardTab("tab_devices", Icons.Default.ExitToApp, "Force Exit")
+    object Admins : DashboardTab("tab_admins", Icons.Default.People, "Admins")
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DashboardScreen() {
-    val navController = rememberNavController()
+fun DashboardScreen(
+    outerNavController: NavHostController,
+    facilityViewModel: FacilityViewModel,
+    adminViewModel: AdminViewModel,
+    deviceViewModel: DeviceViewModel,
+    onLogout: () -> Unit
+) {
+    val tabNavController = rememberNavController()
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
+
+    val showSnackbar: (String) -> Unit = { msg ->
+        scope.launch { snackbarHostState.showSnackbar(msg) }
+    }
+    val handleUnauthorized: () -> Unit = { onLogout() }
 
     Scaffold(
-        containerColor = Color(0xFF0B101F),
+        containerColor = DsBgDark,
         topBar = {
             CenterAlignedTopAppBar(
                 title = {
                     Text(
-                        text = "ADMIN PORTAL",
+                        "ADMIN PORTAL",
                         color = Color.White,
                         fontSize = 20.sp,
                         fontWeight = FontWeight.Bold,
                         letterSpacing = 2.sp
                     )
                 },
-                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
-                    containerColor = Color(0xFF0B101F) // Same as background for a seamless look
-                ),
-                // Add an optional action icon like a logout or profile button
-                /*actions = {
-                    IconButton(onClick = { *//* Handle Profile *//* }) {
-                        Icon(
-                            imageVector = Icons.Default.AccountCircle,
-                            contentDescription = "Profile",
-                            tint = Color.White
-                        )
+                actions = {
+                    TextButton(onClick = onLogout) {
+                        Icon(Icons.Default.Logout, contentDescription = null, tint = DsAccentBlue, modifier = Modifier.size(18.dp))
+                        Text("Logout", color = DsAccentBlue, fontSize = 16.sp, modifier = Modifier.padding(start = 6.dp))
                     }
-                }*/
+                },
+                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = DsBgDark)
             )
         },
         bottomBar = {
-            BottomNavigationBar(navController)
+            val tabs = listOf(DashboardTab.Facilities, DashboardTab.Devices, DashboardTab.Admins)
+            val navBackStackEntry by tabNavController.currentBackStackEntryAsState()
+            val currentRoute = navBackStackEntry?.destination?.route
+            NavigationBar(containerColor = DsNavBg) {
+                tabs.forEach { tab ->
+                    val selected = currentRoute == tab.route
+                    NavigationBarItem(
+                        icon = {
+                            Icon(tab.icon, tab.title, modifier = Modifier.size(24.dp))
+                        },
+                        label = {
+                            Text(
+                                tab.title,
+                                fontSize = 11.sp,
+                                fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal
+                            )
+                        },
+                        selected = selected,
+                        onClick = {
+                            if (currentRoute != tab.route) {
+                                tabNavController.navigate(tab.route) {
+                                    popUpTo(tabNavController.graph.startDestinationId) {
+                                        saveState = true
+                                    }
+                                    launchSingleTop = true
+                                    restoreState = true
+                                }
+                            }
+                        },
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = DsAccentBlue,
+                            selectedTextColor = DsAccentBlue,
+                            unselectedIconColor = DsTextGray,
+                            unselectedTextColor = DsTextGray,
+                            indicatorColor = Color.Transparent
+                        )
+                    )
+                }
+            }
+        },
+        snackbarHost = {
+            SnackbarHost(snackbarHostState) { data ->
+                Snackbar(
+                    snackbarData = data,
+                    containerColor = Color(0xFF2E7D32),
+                    contentColor = Color.White
+                )
+            }
         }
     ) { innerPadding ->
-        // The innerPadding now handles both the TopBar and BottomBar height
         Box(modifier = Modifier.padding(innerPadding)) {
-            DashboardNavHost(navController)
-        }
-    }
-}
-
-@Composable
-fun DashboardNavHost(navController: NavHostController) {
-    NavHost(
-        navController = navController,
-        startDestination = NavigationItem.Facility.route
-    ) {
-        composable(NavigationItem.Facility.route) {
-            FacilityContent()
-        }
-        composable(NavigationItem.ForceExit.route) {
-            ForceExitContent()
-        }
-    }
-}
-@Composable
-fun BottomNavigationBar(navController: NavHostController) {
-    val items = listOf(
-        NavigationItem.Facility,
-        NavigationItem.ForceExit
-    )
-
-    NavigationBar(
-        // Slightly lighter navy for the bar to create a subtle separation
-        containerColor = Color(0xFF111727),
-        tonalElevation = 8.dp
-    ) {
-        val navBackStackEntry by navController.currentBackStackEntryAsState()
-        val currentRoute = navBackStackEntry?.destination?.route
-
-        items.forEach { item ->
-            val isSelected = currentRoute == item.route
-
-            NavigationBarItem(
-                icon = {
-                    Icon(
-                        painter = painterResource(id = item.icon),
-                        contentDescription = item.title,
-                        modifier = Modifier.size(26.dp)
+            NavHost(
+                navController = tabNavController,
+                startDestination = DashboardTab.Facilities.route
+            ) {
+                composable(DashboardTab.Facilities.route) {
+                    FacilityContent(
+                        navController = outerNavController,
+                        viewModel = facilityViewModel,
+                        showSnackbar = showSnackbar,
+                        onUnauthorized = handleUnauthorized
                     )
-                },
-                label = {
-                    Text(
-                        text = item.title,
-                        // Pass parameters directly to avoid TextStyle constructor conflicts
-                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                        fontSize = 12.sp
+                }
+                composable(DashboardTab.Devices.route) {
+                    ForceExitContent(
+                        navController = outerNavController,
+                        viewModel = deviceViewModel,
+                        onUnauthorized = handleUnauthorized
                     )
-                },
-                selected = isSelected,
-                onClick = {
-                    if (currentRoute != item.route) {
-                        navController.navigate(item.route) {
-                            popUpTo(navController.graph.findStartDestination().id) {
-                                saveState = true
-                            }
-                            launchSingleTop = true
-                            restoreState = true
-                        }
-                    }
-                },
-                colors = NavigationBarItemDefaults.colors(
-                    selectedIconColor = Color(0xFF2196F3), // Bright Blue from your logo
-                    selectedTextColor = Color(0xFF2196F3),
-                    unselectedIconColor = Color(0xFF8A92A6), // Muted Gray-Blue
-                    unselectedTextColor = Color(0xFF8A92A6),
-                    // This removes the large "pill" background for a cleaner look
-                    indicatorColor = Color.Transparent
-                )
-            )
+                }
+                composable(DashboardTab.Admins.route) {
+                    AdminListContent(
+                        viewModel = adminViewModel,
+                        onUnauthorized = handleUnauthorized
+                    )
+                }
+            }
         }
     }
-}
-
-@Preview(showBackground = true, device = "spec:width=411dp,height=891dp", showSystemUi = true)
-@Composable
-fun DashboardPreview() {
-    // You can see the dark theme and bottom navigation bar here
-    DashboardScreen()
-}
-
-sealed class NavigationItem(var route: String, var icon: Int, var title: String) {
-    object Facility : NavigationItem("facility", R.drawable.icon_facility, "Facility")
-    object ForceExit : NavigationItem("force_exit", R.drawable.icon_force_exit, "Force Exit")
 }

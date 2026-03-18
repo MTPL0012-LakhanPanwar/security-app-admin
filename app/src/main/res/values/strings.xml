@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">CameraLockFacility</string>
+    <string name="app_name">Security App Admin</string>
     <string name="title_activity_dashboard">DashboardActivity</string>
     <string name="title_activity_create_update_facility">CreateUpdateFacility</string>
 </resources>
