@@ -19,7 +19,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.navigation.NavHostController
 import com.security.cameralockfacility.modal.ApiResult
 import com.security.cameralockfacility.modal.FacilityData
 import com.security.cameralockfacility.viewmodel.FacilityViewModel
@@ -33,8 +32,9 @@ private val CuTextGray = Color(0xFF8A92A6)
 @Composable
 fun CreateUpdateScreen(
     facilityId: String?,
-    navController: NavHostController,
-    viewModel: FacilityViewModel
+    viewModel: FacilityViewModel,
+    onNavigateBack: () -> Unit,
+    onSaveSuccess: () -> Unit
 ) {
     val isEditMode = facilityId != null
     val detailState by viewModel.detailState.collectAsState()
@@ -51,7 +51,7 @@ fun CreateUpdateScreen(
     var state by remember { mutableStateOf("") }
     var country by remember { mutableStateOf("") }
     val emails = remember { mutableStateListOf("") }
-    var timezone by remember { mutableStateOf("UTC") }
+    var timezone by remember { mutableStateOf("Asia/Kolkata") }
     var status by remember { mutableStateOf("active") }
     var formLoaded by remember { mutableStateOf(!isEditMode) }
 
@@ -74,7 +74,7 @@ fun CreateUpdateScreen(
                 emails.clear()
                 emails.addAll(f.notificationEmails)
             }
-            timezone = f.timezone ?: "UTC"
+            timezone = f.timezone ?: "Asia/Kolkata"
             status = f.status
             formLoaded = true
         }
@@ -89,8 +89,7 @@ fun CreateUpdateScreen(
             is ApiResult.Success -> {
                 scope.launch { snackbarHostState.showSnackbar(s.data) }
                 viewModel.resetSave()
-                viewModel.refreshFacilities()
-                navController.popBackStack()
+                onSaveSuccess()
             }
             is ApiResult.Error -> {
                 scope.launch { snackbarHostState.showSnackbar(s.message) }
@@ -116,7 +115,7 @@ fun CreateUpdateScreen(
                 navigationIcon = {
                     IconButton(onClick = {
                         viewModel.resetDetail()
-                        navController.popBackStack()
+                        onNavigateBack()
                     }) {
                         Icon(Icons.Default.ArrowBack, null, tint = Color.White)
                     }
@@ -147,7 +146,7 @@ fun CreateUpdateScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             CustomInputField(label = "Facility Name *", value = name, onValueChange = { name = it })
-            CustomInputField(label = "Description", value = description, onValueChange = { description = it }, singleLine = false)
+            CustomInputField(label = "Description *", value = description, onValueChange = { description = it }, singleLine = false)
 
             // Location Section
             Text("Location", color = CuTextGray, fontSize = 14.sp, fontWeight = FontWeight.Medium)
@@ -173,7 +172,7 @@ fun CreateUpdateScreen(
             // Timezone
             CustomDropdown(
                 label = "Timezone",
-                options = listOf("Asia/Kolkata", "UTC",),
+                options = listOf("Asia/Kolkata", "UTC"),
                 selectedOption = timezone,
                 onOptionSelected = { timezone = it }
             )
@@ -190,15 +189,29 @@ fun CreateUpdateScreen(
 
             Button(
                 onClick = {
-                    if (name.isBlank()) {
-                        scope.launch { snackbarHostState.showSnackbar("Facility name is required") }
-                        return@Button
-                    }
                     val emailList = emails.filter { it.isNotBlank() }
-                    if (isEditMode) {
-                        viewModel.updateFacility(facilityId!!, name, description, address, city, state, country, emailList, timezone, status)
-                    } else {
-                        viewModel.createFacility(name, description, address, city, state, country, emailList, timezone, status)
+                    val emailRegex = "^[A-Za-z0-9+_.-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$".toRegex()
+                    val invalidEmail = emailList.firstOrNull { !it.matches(emailRegex) }
+                    when {
+                        name.isBlank() -> {
+                            scope.launch { snackbarHostState.showSnackbar("Facility name is required") }
+                        }
+                        description.isBlank() -> {
+                            scope.launch { snackbarHostState.showSnackbar("Description is required") }
+                        }
+                        emailList.isEmpty() -> {
+                            scope.launch { snackbarHostState.showSnackbar("At least one notification email is required") }
+                        }
+                        invalidEmail != null -> {
+                            scope.launch { snackbarHostState.showSnackbar("Invalid email: $invalidEmail") }
+                        }
+                        else -> {
+                            if (isEditMode) {
+                                viewModel.updateFacility(facilityId!!, name, description, address, city, state, country, emailList, timezone, status)
+                            } else {
+                                viewModel.createFacility(name, description, address, city, state, country, emailList, timezone, status)
+                            }
+                        }
                     }
                 },
                 modifier = Modifier
@@ -236,7 +249,7 @@ fun EmailSection(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Text("Notification Emails", color = CuTextGray, fontSize = 14.sp)
+            Text("Notification Emails *", color = CuTextGray, fontSize = 14.sp)
             IconButton(onClick = onAddEmail) {
                 Icon(Icons.Default.AddCircle, null, tint = CuAccentBlue)
             }

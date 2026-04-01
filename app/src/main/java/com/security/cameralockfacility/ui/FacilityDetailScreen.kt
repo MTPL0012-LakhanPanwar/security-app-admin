@@ -49,7 +49,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.layout.Spacer
-import androidx.navigation.NavHostController
 import com.security.cameralockfacility.modal.ApiResult
 import com.security.cameralockfacility.modal.FacilityData
 import com.security.cameralockfacility.modal.QRData
@@ -74,8 +73,10 @@ private val FdChipBg = Color(0xFF1D2536)
 @OptIn(ExperimentalMaterial3Api::class)
 fun FacilityDetailScreen(
     facilityId: String,
-    navController: NavHostController,
     viewModel: FacilityViewModel,
+    onNavigateBack: () -> Unit,
+    onEditFacility: (String) -> Unit,
+    onDeleteSuccess: () -> Unit,
     onUnauthorized: () -> Unit
     ) {
     val detailState by viewModel.detailState.collectAsState()
@@ -99,9 +100,8 @@ fun FacilityDetailScreen(
             is ApiResult.Success -> {
                 scope.launch { snackbarHostState.showSnackbar(state.data) }
                 viewModel.resetDelete()
-                viewModel.refreshFacilities()
                 viewModel.resetDetail()
-                navController.popBackStack()
+                onDeleteSuccess()
             }
             is ApiResult.Error -> {
                 scope.launch { snackbarHostState.showSnackbar(state.message) }
@@ -130,7 +130,7 @@ fun FacilityDetailScreen(
                     )
                 },
                 navigationIcon = {
-                    IconButton(onClick = { navController.popBackStack() }) {
+                    IconButton(onClick = { onNavigateBack() }) {
                         Icon(Icons.Default.ArrowBack, null, tint = Color.White)
                     }
                 },
@@ -173,7 +173,7 @@ fun FacilityDetailScreen(
                         )
                         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                             OutlinedButton(
-                                onClick = { navController.popBackStack() },
+                                onClick = { onNavigateBack() },
                                 colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White)
                             ) { Text("Go Back") }
                             Button(
@@ -189,7 +189,7 @@ fun FacilityDetailScreen(
                 FacilityDetailContent(
                     facility = facility,
                     paddingValues = innerPadding,
-                    onEdit = { navController.navigate("facility/edit/${facility.id}") },
+                    onEdit = { onEditFacility(facility.id) },
                     onDelete = { confirmDelete = true },
                     onShowEntry = { qrFocus = QRType.ENTRY },
                     onShowExit = { qrFocus = QRType.EXIT }

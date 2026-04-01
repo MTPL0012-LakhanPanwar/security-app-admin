@@ -28,6 +28,7 @@ import com.security.cameralockfacility.viewmodel.AdminViewModel
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.drop
 import java.time.Instant
 import java.time.LocalDateTime
 import java.time.ZoneId
@@ -59,7 +60,7 @@ fun AdminListContent(
 
     val searchFlow = remember { MutableStateFlow("") }
     LaunchedEffect(Unit) {
-        searchFlow.debounce(400).collect { q ->
+        searchFlow.drop(1).debounce(400).collect { q ->
             viewModel.loadAdmins(1, q, reset = true)
         }
     }

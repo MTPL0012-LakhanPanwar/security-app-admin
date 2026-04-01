@@ -16,14 +16,17 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.navigation.NavHostController
 import com.security.cameralockfacility.modal.ApiResult
 import com.security.cameralockfacility.R
 import com.security.cameralockfacility.viewmodel.AuthViewModel
 import kotlinx.coroutines.launch
 
 @Composable
-fun RegisterScreen(navController: NavHostController, viewModel: AuthViewModel) {
+fun RegisterScreen(
+    viewModel: AuthViewModel,
+    onRegisterSuccess: () -> Unit,
+    onNavigateBack: () -> Unit
+) {
     var username by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var passwordVisible by remember { mutableStateOf(false) }
@@ -41,9 +44,7 @@ fun RegisterScreen(navController: NavHostController, viewModel: AuthViewModel) {
         when (val state = registerState) {
             is ApiResult.Success -> {
                 viewModel.resetRegister()
-                navController.navigate("dashboard") {
-                    popUpTo(0) { inclusive = true }
-                }
+                onRegisterSuccess()
             }
             is ApiResult.Error -> {
                 scope.launch { snackbarHostState.showSnackbar(state.message) }
@@ -176,7 +177,7 @@ fun RegisterScreen(navController: NavHostController, viewModel: AuthViewModel) {
                     color = AccentBlue,
                     fontSize = 14.sp,
                     fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.clickable { navController.popBackStack() }
+                    modifier = Modifier.clickable { onNavigateBack() }
                 )
             }
         }

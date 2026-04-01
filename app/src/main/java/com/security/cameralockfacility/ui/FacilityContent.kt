@@ -1,5 +1,7 @@
 package com.security.cameralockfacility.ui
 
+import android.content.Intent
+import androidx.activity.result.ActivityResultLauncher
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -25,11 +27,13 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.navigation.NavHostController
+import com.security.cameralockfacility.activity.CreateUpdateFacility
+import com.security.cameralockfacility.activity.FacilityDetailActivity
 import com.security.cameralockfacility.modal.ApiResult
 import com.security.cameralockfacility.modal.FacilityData
 import com.security.cameralockfacility.ui.QRType
@@ -37,6 +41,7 @@ import com.security.cameralockfacility.viewmodel.FacilityViewModel
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.drop
 import java.time.Instant
 import java.time.LocalDateTime
 import java.time.ZoneId
@@ -53,12 +58,14 @@ private val FcStatusRed = Color(0xFFEF5350)
 @OptIn(FlowPreview::class, ExperimentalMaterialApi::class)
 @Composable
 fun FacilityContent(
-    navController: NavHostController,
     viewModel: FacilityViewModel,
     showSnackbar: (String) -> Unit,
-    onUnauthorized: () -> Unit
+    onUnauthorized: () -> Unit,
+    facilityDetailLauncher: ActivityResultLauncher<Intent>,
+    createUpdateLauncher: ActivityResultLauncher<Intent>
 ) {
     var searchQuery by remember { mutableStateOf("") }
+    val context = LocalContext.current
     val listState by viewModel.listState.collectAsState()
     val deleteState by viewModel.deleteState.collectAsState()
     val lazyListState = rememberLazyListState()
@@ -71,10 +78,11 @@ fun FacilityContent(
         onRefresh = { viewModel.refreshFacilities() }
     )
 
-    // Search debounce
+    // Search debounce — drop(1) skips the initial StateFlow value to avoid
+    // a duplicate load race with the explicit initial-load LaunchedEffect below.
     val searchFlow = remember { MutableStateFlow("") }
     LaunchedEffect(Unit) {
-        searchFlow.debounce(400).collect { q ->
+        searchFlow.drop(1).debounce(400).collect { q ->
             viewModel.loadFacilities(1, q, reset = true)
         }
     }
@@ -92,11 +100,17 @@ fun FacilityContent(
         when (val state = deleteState) {
             is ApiResult.Success -> {
                 showSnackbar(state.data)
+                // Remove the deleted facility from the local list immediately
+                facilityToDelete?.let { deleted ->
+                    viewModel.items.removeAll { it.id == deleted.id }
+                }
+                facilityToDelete = null
                 viewModel.resetDelete()
                 viewModel.refreshFacilities()
             }
             is ApiResult.Error -> {
                 showSnackbar(state.message)
+                facilityToDelete = null
                 viewModel.resetDelete()
                 if (state.code == 401) onUnauthorized()
             }
@@ -150,7 +164,10 @@ fun FacilityContent(
                 )
             )
             Button(
-                onClick = { navController.navigate("facility/create") },
+                onClick = {
+                    val intent = Intent(context, CreateUpdateFacility::class.java)
+                    createUpdateLauncher.launch(intent)
+                },
                 modifier = Modifier.height(46.dp),
                 shape = RoundedCornerShape(12.dp),
                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
@@ -191,7 +208,10 @@ fun FacilityContent(
                             Text("There are no facilities available", color = FcTextGray, fontSize = 16.sp)
                             Spacer(Modifier.height(12.dp))
                             Button(
-                                onClick = { navController.navigate("facility/create") },
+                                onClick = {
+                                    val intent = Intent(context, CreateUpdateFacility::class.java)
+                                    createUpdateLauncher.launch(intent)
+                                },
                                 colors = ButtonDefaults.buttonColors(containerColor = FcAccentBlue)
                             ) { Text("Create First Facility") }
                         }
@@ -202,10 +222,20 @@ fun FacilityContent(
                         items(viewModel.items) { facility ->
                             FacilityCardComposable(
                                 facility = facility,
-                                onUpdate = { navController.navigate("facility/edit/${facility.id}") },
+                                onUpdate = {
+                                    val intent = Intent(context, CreateUpdateFacility::class.java)
+                                    intent.putExtra(CreateUpdateFacility.EXTRA_FACILITY_ID, facility.id)
+                                    createUpdateLauncher.launch(intent)
+                                },
                                 onDelete = { facilityToDelete = facility },
                                 onQRCode = { qrType -> facilityForQR = facility to qrType },
-                                onView = { if (facility.id.isNotBlank()) navController.navigate("facility/detail/${facility.id}") }
+                                onView = {
+                                    if (facility.id.isNotBlank()) {
+                                        val intent = Intent(context, FacilityDetailActivity::class.java)
+                                        intent.putExtra(FacilityDetailActivity.EXTRA_FACILITY_ID, facility.id)
+                                        facilityDetailLauncher.launch(intent)
+                                    }
+                                }
                             )
                         }
                         if (isLoading) {
@@ -246,7 +276,6 @@ fun FacilityContent(
             onDismissRequest = { if (deleteState !is ApiResult.Loading) facilityToDelete = null },
             onConfirmDelete = {
                 viewModel.deleteFacility(facility.id)
-                facilityToDelete = null
             }
         )
     }

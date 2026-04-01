@@ -1,9 +1,12 @@
 package com.security.cameralockfacility.activity
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.ActivityResultLauncher
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.runtime.LaunchedEffect
 import androidx.navigation.compose.NavHost
@@ -11,12 +14,8 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.security.cameralockfacility.auth.TokenManager
 import com.security.cameralockfacility.ui.AdminSplashScreen
-import com.security.cameralockfacility.ui.CreateUpdateScreen
 import com.security.cameralockfacility.ui.DashboardScreen
 import com.security.cameralockfacility.ui.DeviceDetailScreen
-import com.security.cameralockfacility.ui.FacilityDetailScreen
-import com.security.cameralockfacility.ui.LoginScreen
-import com.security.cameralockfacility.ui.RegisterScreen
 import com.security.cameralockfacility.ui.theme.CameraLockFacilityTheme
 import com.security.cameralockfacility.viewmodel.AdminViewModel
 import com.security.cameralockfacility.viewmodel.AuthViewModel
@@ -31,14 +30,55 @@ class MainActivity : ComponentActivity() {
     private val adminViewModel: AdminViewModel by viewModels()
     private val deviceViewModel: DeviceViewModel by viewModels()
 
+    private lateinit var facilityDetailLauncher: ActivityResultLauncher<Intent>
+    private lateinit var createUpdateLauncher: ActivityResultLauncher<Intent>
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+
+        // Launcher for CreateUpdateFacility — on save, refresh the list
+        createUpdateLauncher = registerForActivityResult(
+            ActivityResultContracts.StartActivityForResult()
+        ) { result ->
+            if (result.resultCode == CreateUpdateFacility.RESULT_SAVED) {
+                facilityViewModel.refreshFacilities()
+            }
+        }
+
+        // Launcher for FacilityDetailActivity
+        facilityDetailLauncher = registerForActivityResult(
+            ActivityResultContracts.StartActivityForResult()
+        ) { result ->
+            when (result.resultCode) {
+                FacilityDetailActivity.RESULT_EDIT -> {
+                    // Launch CreateUpdateFacility for edit
+                    val editId = result.data?.getStringExtra(
+                        FacilityDetailActivity.EXTRA_EDIT_FACILITY_ID
+                    )
+                    if (editId != null) {
+                        val intent = Intent(this, CreateUpdateFacility::class.java)
+                        intent.putExtra(CreateUpdateFacility.EXTRA_FACILITY_ID, editId)
+                        createUpdateLauncher.launch(intent)
+                    }
+                }
+                FacilityDetailActivity.RESULT_DELETED -> {
+                    facilityViewModel.refreshFacilities()
+                }
+            }
+        }
+
         val tokenManager = TokenManager(this)
+
+        // Check if launched with a specific destination (from Login/Register activities)
+        val requestedDestination = intent.getStringExtra("destination")
+        val startDest = if (requestedDestination == "dashboard") "dashboard" else "splash"
+
         setContent {
             CameraLockFacilityTheme {
                 val navController = rememberNavController()
-                NavHost(navController = navController, startDestination = "splash") {
+
+                NavHost(navController = navController, startDestination = startDest) {
 
                     composable("splash") {
                         LaunchedEffect(Unit) {
@@ -48,20 +88,13 @@ class MainActivity : ComponentActivity() {
                                     popUpTo("splash") { inclusive = true }
                                 }
                             } else {
-                                navController.navigate("login") {
-                                    popUpTo("splash") { inclusive = true }
-                                }
+                                val loginIntent = Intent(this@MainActivity, LoginActivity::class.java)
+                                loginIntent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+                                startActivity(loginIntent)
+                                finish()
                             }
                         }
                         AdminSplashScreen()
-                    }
-
-                    composable("login") {
-                        LoginScreen(navController = navController, viewModel = authViewModel)
-                    }
-
-                    composable("register") {
-                        RegisterScreen(navController = navController, viewModel = authViewModel)
                     }
 
                     composable("dashboard") {
@@ -70,43 +103,14 @@ class MainActivity : ComponentActivity() {
                             facilityViewModel = facilityViewModel,
                             adminViewModel = adminViewModel,
                             deviceViewModel = deviceViewModel,
+                            facilityDetailLauncher = facilityDetailLauncher,
+                            createUpdateLauncher = createUpdateLauncher,
                             onLogout = {
                                 authViewModel.logout()
-                                navController.navigate("login") {
-                                    popUpTo(0) { inclusive = true }
-                                }
-                            }
-                        )
-                    }
-
-                    composable("facility/create") {
-                        CreateUpdateScreen(
-                            facilityId = null,
-                            navController = navController,
-                            viewModel = facilityViewModel
-                        )
-                    }
-
-                    composable("facility/edit/{facilityId}") { backStack ->
-                        val facilityId = backStack.arguments?.getString("facilityId")
-                        CreateUpdateScreen(
-                            facilityId = facilityId,
-                            navController = navController,
-                            viewModel = facilityViewModel
-                        )
-                    }
-
-                    composable("facility/detail/{facilityId}") { backStack ->
-                        val facilityId = backStack.arguments?.getString("facilityId") ?: return@composable
-                        FacilityDetailScreen(
-                            facilityId = facilityId,
-                            navController = navController,
-                            viewModel = facilityViewModel,
-                            onUnauthorized = {
-                                authViewModel.logout()
-                                navController.navigate("login") {
-                                    popUpTo(0) { inclusive = true }
-                                }
+                                val loginIntent = Intent(this@MainActivity, LoginActivity::class.java)
+                                loginIntent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+                                startActivity(loginIntent)
+                                finish()
                             }
                         )
                     }
@@ -121,9 +125,10 @@ class MainActivity : ComponentActivity() {
                             tokenManager = tokenManager,
                             onUnauthorized = {
                                 authViewModel.logout()
-                                navController.navigate("login") {
-                                    popUpTo(0) { inclusive = true }
-                                }
+                                val loginIntent = Intent(this@MainActivity, LoginActivity::class.java)
+                                loginIntent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+                                startActivity(loginIntent)
+                                finish()
                             }
                         )
                     }

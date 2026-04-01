@@ -1,5 +1,7 @@
 package com.security.cameralockfacility.ui
 
+import android.content.Intent
+import androidx.activity.result.ActivityResultLauncher
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -59,6 +61,8 @@ fun DashboardScreen(
     facilityViewModel: FacilityViewModel,
     adminViewModel: AdminViewModel,
     deviceViewModel: DeviceViewModel,
+    facilityDetailLauncher: ActivityResultLauncher<Intent>,
+    createUpdateLauncher: ActivityResultLauncher<Intent>,
     onLogout: () -> Unit
 ) {
     val tabNavController = rememberNavController()
@@ -150,10 +154,11 @@ fun DashboardScreen(
             ) {
                 composable(DashboardTab.Facilities.route) {
                     FacilityContent(
-                        navController = outerNavController,
                         viewModel = facilityViewModel,
                         showSnackbar = showSnackbar,
-                        onUnauthorized = handleUnauthorized
+                        onUnauthorized = handleUnauthorized,
+                        facilityDetailLauncher = facilityDetailLauncher,
+                        createUpdateLauncher = createUpdateLauncher
                     )
                 }
                 composable(DashboardTab.Devices.route) {

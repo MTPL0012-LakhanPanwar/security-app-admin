@@ -23,7 +23,6 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.navigation.NavHostController
 import com.security.cameralockfacility.modal.ApiResult
 import com.security.cameralockfacility.R
 import com.security.cameralockfacility.viewmodel.AuthViewModel
@@ -35,7 +34,11 @@ private val AccentBlue = Color(0xFF2196F3)
 private val TextGray = Color(0xFF8A92A6)
 
 @Composable
-fun LoginScreen(navController: NavHostController, viewModel: AuthViewModel) {
+fun LoginScreen(
+    viewModel: AuthViewModel,
+    onLoginSuccess: () -> Unit,
+    onNavigateToRegister: () -> Unit
+) {
     var username by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var passwordVisible by remember { mutableStateOf(false) }
@@ -48,9 +51,7 @@ fun LoginScreen(navController: NavHostController, viewModel: AuthViewModel) {
         when (val state = loginState) {
             is ApiResult.Success -> {
                 viewModel.resetLogin()
-                navController.navigate("dashboard") {
-                    popUpTo("login") { inclusive = true }
-                }
+                onLoginSuccess()
             }
             is ApiResult.Error -> {
                 scope.launch { snackbarHostState.showSnackbar(state.message) }
@@ -172,7 +173,7 @@ fun LoginScreen(navController: NavHostController, viewModel: AuthViewModel) {
                     fontSize = 14.sp,
                     fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.clickable {
-                        navController.navigate("register")
+                        onNavigateToRegister()
                     }
                 )
             }

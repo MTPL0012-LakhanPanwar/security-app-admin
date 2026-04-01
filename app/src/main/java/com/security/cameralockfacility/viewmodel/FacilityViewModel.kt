@@ -1,6 +1,7 @@
 package com.security.cameralockfacility.viewmodel
 
 import android.app.Application
+import androidx.compose.runtime.mutableStateListOf
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.security.cameralockfacility.api.ApiService
@@ -16,7 +17,7 @@ class FacilityViewModel(app: Application) : AndroidViewModel(app) {
     private val _listState = MutableStateFlow<ApiResult<Unit>?>(null)
     val listState: StateFlow<ApiResult<Unit>?> = _listState
 
-    val items = mutableListOf<FacilityData>()
+    val items = mutableStateListOf<FacilityData>()
     var currentPage = 1; private set
     var totalPages = 1; private set
     var isLastPage = false; private set

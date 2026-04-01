@@ -17,6 +17,18 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.CameraLockFacility">
         <activity
+            android:name=".activity.FacilityDetailActivity"
+            android:exported="false"
+            android:theme="@style/Theme.CameraLockFacility" />
+        <activity
+            android:name=".activity.RegisterActivity"
+            android:exported="false"
+            android:theme="@style/Theme.CameraLockFacility" />
+        <activity
+            android:name=".activity.LoginActivity"
+            android:exported="false"
+            android:theme="@style/Theme.CameraLockFacility" />
+        <activity
             android:name=".activity.CreateUpdateFacility"
             android:exported="false"
             android:label="@string/title_activity_create_update_facility"
